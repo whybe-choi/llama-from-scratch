@@ -158,6 +158,33 @@ class SelfAttention(nn.Module):
         output = (output.transpose(1, 2).contiguous().view(batch_size, seq_len, -1))
         return self.wo(output) # (batch, 1, dim) -> (batch, 1, dim)
 
+class FeedForward(nn.Module):
+
+    def __init__(self, args: ModelArgs):
+        super().__init__()
+
+        hidden_dim = 4 * args.dim
+        hidden_dim = int(2 * hidden_dim / 3)
+        if args.ffn_dim_multiplier is not None:
+            hidden_dim = int(args.ffn_dim_multiplier * hidden_dim)
+        # Round the hidden_dim to the nearest multiple of the multiple_of parameter
+        hidden_dim = args.multiple_of * ((hidden_dim + args.multiple_of - 1) // args.multiple_of)
+
+        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
+
+    def forward(self, x: torch.Tensor):
+        # (batch, seq_len, dim) -> (batch, seq_len, hidden_dim)
+        swish = F.silu(self.w1(x))
+        # (batch, seq_len, dim) -> (batch, seq_len, hidden_dim)
+        x_V = self.w3(x)
+        # (batch, seq_len, hidden_dim) * (batch, seq_len, hidden_dim) -> (batch, seq_len, hidden_dim)
+        x = swish * x_V
+        # (batch, seq_len, hidden_dim) -> (batch, seq_len, dim)
+        x = self.w2(x)
+        return x
+
 class TransformerBlock(nn.Module):
 
     def __init__(self, args: ModelArgs):
